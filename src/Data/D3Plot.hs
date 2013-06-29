@@ -1,11 +1,17 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes #-}
 
-module Data.D3Plot (plotFull, Plottable (plot, plotWithOpts), PlotOptions(PlotOptions), Color) where
+module Data.D3Plot (
+    plotFull,
+    Plottable (plot, plots, plotWithOpts),
+    PlotOptions(PlotOptions, plotPath, plotAutoRefresh, plotFileName),     
+    Color,
+    defaultOpts
+    ) where
 
 import Text.Hamlet
 import Text.Julius
 import Text.Blaze.Html.Renderer.String (renderHtml)
-import Text.Blaze.Html (Markup)
+import Text.Blaze.Html (Markup, ToMarkup)
 
 import System.IO
 import System.FilePath.Posix
@@ -13,36 +19,59 @@ import System.Directory
 
 import Paths_D3Plot
 
+-- | Options that specify the plotting behaviour
 data PlotOptions = PlotOptions {
+    -- | Path where to place the resulting HTML file and it's includes. 
+    --   Default is current directory
     plotPath        :: String,
+
+    -- | Set this to true to have the resulting HTML file automatically refresh
+    --   every few seconds using javascript. Default is false.
     plotAutoRefresh :: Bool,
+
+    -- | The name of the resulting HTML file. Default is \"plot.html\"
     plotFileName    :: String
 }
 
 defaultOpts :: PlotOptions
 defaultOpts  = PlotOptions "." False "plot.html"
 
+-- | Anything that's a valid HTML color can go here.
 type Color = String
 
+-- | Convenience class for quickly plotting data. Create instances for whatever
+--   data you are using. You only need to implement plotWithOpts and the other 
+--   methods should just work.
 class Plottable a where 
+    -- | The default implementation just uses the default options.
     plot         :: a -> IO ()
-    plot = plotWithOpts defaultOpts
+    plot = plotWithOpts defaultOpts . return
 
-    plotWithOpts :: PlotOptions -> a -> IO ()
+    -- | The default implementation just uses the default options.
+    --   Use this methods if plotting multiple objects at the same time.
+    plots :: [a] -> IO ()
+    plots = plotWithOpts defaultOpts
 
-instance (Show a, Num a) => Plottable [a] where
-    plotWithOpts opts values = plotFull opts [("", "#000000", numbered)]
-        where numbered = zip [0..] values
+    plotWithOpts :: PlotOptions -> [a] -> IO ()
 
-instance  (Show a, Num a) => Plottable [[a]] where
-    plotWithOpts opts dataSets = plotFull opts . snd . foldr expand (0,[]) $ dataSets
+instance (ToMarkup a, Num a, ToMarkup b, Num b) => Plottable [(a, b)] where
+    plotWithOpts opts values = plotFull opts labeled 
         where
-         count = length dataSets
-         expand values (n, result)  = (n + 1,  expanded : result) 
-            where expanded = (show n, generateColor count n, (zip [0..] values))
+            labeled = map (makePlot (length values)) . zip [0..] $ values
 
+instance (ToMarkup a, Num a) => Plottable [a] where
+    plotWithOpts opts values = plotFull opts labeled 
+        where 
+            labeled  = map (makePlot (length values)) . zip [0..] $ numbered
+            numbered = map (zip [(0 :: Int)..]) values
 
-plotFull :: (Show a, Num a, Show b, Num b) => PlotOptions -> [(String, Color, [(a, b)])] -> IO ()
+makePlot :: Int -> (Int, [a]) -> (String, Color, [a])
+makePlot total (n, values) =  ((show n), (generateColor total n), values)
+
+-- | This method does all the work. Each item in the supplied list will be
+--   plotted as a separate line. First element of the tuple is the key, second
+--   is the colour and the last are a list of X and Y coordinates of each point.
+plotFull :: (ToMarkup a, Num a, ToMarkup b, Num b) => PlotOptions -> [(String, Color, [(a, b)])] -> IO ()
 plotFull opts values = writeResult opts $ renderHtml template
     where 
         template = [shamlet|
@@ -83,7 +112,7 @@ chart dataFunction = [shamlet|
 |]
 
 
-buildData :: (Show a, Num a, Show b, Num b) => String -> [(String, Color, [(a, b)])] -> Markup 
+buildData :: (ToMarkup a, Num a, ToMarkup b, Num b) => String -> [(String, Color, [(a, b)])] -> Markup 
 buildData dataFunction plots = [shamlet|
         function #{dataFunction}() {
             var result = [];
@@ -97,11 +126,11 @@ buildData dataFunction plots = [shamlet|
         }
     |]
 
-buildDataValues :: (Show a, Show b) => [(a, b)] -> Markup
+buildDataValues :: (ToMarkup a, Num a, ToMarkup b, Num b) => [(a, b)] -> Markup
 buildDataValues values = [shamlet| 
         [
         $forall (x, y) <- values
-            { x : #{show x}, y : #{show y}},
+            { x : #{x}, y : #{y}},
         ]    
     |]
 
