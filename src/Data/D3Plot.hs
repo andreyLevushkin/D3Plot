@@ -93,7 +93,7 @@ instance (Show a, ToMarkup b, Num b) => BarPlottable [(a, b)] where
 makePlot :: Int -> (Int, [a]) -> (String, Color, [a])
 makePlot total (n, values) =  ((show n), (generateColor total n), values)
 
--- | This method does all the work. Each item in the supplied list will be
+-- | This method plots a line graph. Each item in the supplied list will be
 --   plotted as a separate line. First element of the tuple is the key, second
 --   is the colour and the last are a list of X and Y coordinates of each point.
 plotLineChart :: (ToMarkup a, ToMarkup b, Num b) 
@@ -102,11 +102,17 @@ plotLineChart :: (ToMarkup a, ToMarkup b, Num b)
          -> IO ()
 plotLineChart = render lineChart (buildData xyNumberValues)
 
+
+-- | This method plots a bar chart. Each item in the supplied list will be
+--   plotted as a separate bar chart (a collection of bars of the same colour).
+--   First element of the tuple is the key, second is the colour and the last 
+--   are a list of X labels and Y coordinates of each bar in this bar chart.
 plotBarChart :: (ToMarkup b, Num b) 
          => PlotOptions
          -> [(String, Color, [(String, b)])] 
          -> IO ()
 plotBarChart = render barChart (buildData textLabelValues)       
+
 
 render :: (ToMarkup a, ToMarkup b, Num b) 
        => (String  -> Markup) 
