@@ -8,7 +8,8 @@ module Data.D3Plot (
     PlotOptions(PlotOptions, plotPath, plotAutoRefresh, plotFileName),     
     Color,
     defaultOpts,
-    generateColor
+    generateColor,
+    colors
     ) where
 
 import Text.Hamlet
@@ -232,6 +233,8 @@ generateColor total number = "hsl(" ++ show hue ++ ",20%, 50%)"
     where step = 360 / (fromIntegral total)
           hue  = (fromIntegral number) * step
 
+-- | Returns a list of unique colours of the specified length. Helper for 
+--   plotting charts of different colours.
 colors :: Int -> [Color]          
 colors total = map (generateColor total) [0..total]
 
