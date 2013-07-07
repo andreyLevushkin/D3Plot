@@ -1,21 +1,26 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes #-}
 
 module Data.D3Plot (
-    plotFull,
-    Plottable (plot, plots, plotWithOpts),
+    plotLineChart,
+    plotBarChart,
+    LinePlottable (linePlot, linePlots, linePlotWithOpts),
+    BarPlottable (barPlot, barPlots, barPlotWithOpts),
     PlotOptions(PlotOptions, plotPath, plotAutoRefresh, plotFileName),     
     Color,
-    defaultOpts
+    defaultOpts,
+    generateColor
     ) where
 
 import Text.Hamlet
 import Text.Julius
 import Text.Blaze.Html.Renderer.String (renderHtml)
-import Text.Blaze.Html (Markup, ToMarkup)
+import Text.Blaze.Html (Markup, ToMarkup, preEscapedToHtml)
 
 import System.IO
 import System.FilePath.Posix
 import System.Directory
+
+import Control.Arrow ((***))
 
 import Paths_D3Plot
 
@@ -40,30 +45,50 @@ defaultOpts  = PlotOptions "." False "plot.html"
 type Color = String
 
 -- | Convenience class for quickly plotting data. Create instances for whatever
---   data you are using. You only need to implement plotWithOpts and the other 
+--   data you are using. You only need to implement plotLineChart and the other 
 --   methods should just work.
-class Plottable a where 
+class LinePlottable a where 
     -- | The default implementation just uses the default options.
-    plot         :: a -> IO ()
-    plot = plotWithOpts defaultOpts . return
+    linePlot         :: a -> IO ()
+    linePlot = linePlotWithOpts defaultOpts . return
 
     -- | The default implementation just uses the default options.
     --   Use this methods if plotting multiple objects at the same time.
-    plots :: [a] -> IO ()
-    plots = plotWithOpts defaultOpts
+    linePlots :: [a] -> IO ()
+    linePlots = linePlotWithOpts defaultOpts
 
-    plotWithOpts :: PlotOptions -> [a] -> IO ()
+    linePlotWithOpts :: PlotOptions -> [a] -> IO ()
 
-instance (ToMarkup a, Num a, ToMarkup b, Num b) => Plottable [(a, b)] where
-    plotWithOpts opts values = plotFull opts labeled 
+instance (ToMarkup a, Num a, ToMarkup b, Num b) => LinePlottable [(a, b)] where
+    linePlotWithOpts opts values = plotLineChart opts labeled 
         where
             labeled = map (makePlot (length values)) . zip [0..] $ values
 
-instance (ToMarkup a, Num a) => Plottable [a] where
-    plotWithOpts opts values = plotFull opts labeled 
+instance (ToMarkup a, Num a) => LinePlottable [a] where
+    linePlotWithOpts opts values = plotLineChart opts labeled 
         where 
             labeled  = map (makePlot (length values)) . zip [0..] $ numbered
             numbered = map (zip [(0 :: Int)..]) values
+
+-- | Same as LinePlottable but it wraps plotBarChart and plots a bar chart
+--   instead of a line chart.
+class BarPlottable a where
+    barPlot  ::  a  -> IO ()
+    barPlot = barPlotWithOpts defaultOpts . return 
+
+    barPlots :: [a] -> IO ()
+    barPlots = barPlotWithOpts defaultOpts
+
+    -- | When implementing this class you only need to to provide this function
+    --   and the other two a will have default implimentations.
+    barPlotWithOpts :: PlotOptions -> [a] -> IO ()
+
+instance (Show a, ToMarkup b, Num b) => BarPlottable [(a, b)] where
+    barPlotWithOpts opts values = plotBarChart opts labeled 
+        where
+            textValues = map (map (show *** id)) values
+            labeled    = zip3 (repeat "") (colors size) textValues
+            size       = length values
 
 makePlot :: Int -> (Int, [a]) -> (String, Color, [a])
 makePlot total (n, values) =  ((show n), (generateColor total n), values)
@@ -71,8 +96,25 @@ makePlot total (n, values) =  ((show n), (generateColor total n), values)
 -- | This method does all the work. Each item in the supplied list will be
 --   plotted as a separate line. First element of the tuple is the key, second
 --   is the colour and the last are a list of X and Y coordinates of each point.
-plotFull :: (ToMarkup a, Num a, ToMarkup b, Num b) => PlotOptions -> [(String, Color, [(a, b)])] -> IO ()
-plotFull opts values = writeResult opts $ renderHtml template
+plotLineChart :: (ToMarkup a, ToMarkup b, Num b) 
+         => PlotOptions
+         -> [(String, Color, [(a, b)])] 
+         -> IO ()
+plotLineChart = render lineChart (buildData xyNumberValues)
+
+plotBarChart :: (ToMarkup b, Num b) 
+         => PlotOptions
+         -> [(String, Color, [(String, b)])] 
+         -> IO ()
+plotBarChart = render barChart (buildData textLabelValues)       
+
+render :: (ToMarkup a, ToMarkup b, Num b) 
+       => (String  -> Markup) 
+       -> (String -> [(String, Color,[(a,b)])] -> Markup)
+       -> PlotOptions 
+       -> [(String, Color, [(a, b)])] 
+       -> IO ()     
+render plotter dataBuilder opts values = writeResult opts $ renderHtml template
     where 
         template = [shamlet|
             <html>
@@ -82,11 +124,12 @@ plotFull opts values = writeResult opts $ renderHtml template
                     <div id="chart"><svg>
 
                     <script>
-                        #{chart "chart_data"}      
-                        #{buildData "chart_data" values} 
+                        #{plotter "chart_data"}      
+                        #{dataBuilder "chart_data" values} 
 
                     #{autoRefresh (plotAutoRefresh opts)}        
         |]
+
 
 htmlHead :: Markup
 htmlHead = [shamlet| 
@@ -95,11 +138,36 @@ htmlHead = [shamlet|
     <link href="nv.d3.css" rel="stylesheet" type="text/css">
 |]
 
-chart :: String -> Markup
-chart dataFunction = [shamlet| 
+barChart :: String -> Markup
+barChart dataFunction = [shamlet| 
+     nv.addGraph(function() {  
+        var chart = nv.models.discreteBarChart();
+        
+        var data  = #{dataFunction}();
+
+        var getMax = function(d){
+            return d3.max(d.values, function(v){ return v.y} );
+        }
+
+        chart.yDomain([0, d3.max(data, getMax)]);
+
+        d3.select('#chart svg')
+            .datum(data)
+            .transition().duration(200)
+            .call(chart);
+
+        nv.utils.windowResize(function() { d3.select('#chart svg').call(chart) });
+
+        return chart;
+    });
+
+|]
+
+lineChart :: String -> Markup
+lineChart dataFunction = [shamlet| 
     nv.addGraph(function() {  
         var chart = nv.models.lineChart();
-   
+
         d3.select('#chart svg')
             .datum(#{dataFunction ++ "()"})
             .transition().duration(200)
@@ -111,38 +179,55 @@ chart dataFunction = [shamlet|
     });
 |]
 
-
-buildData :: (ToMarkup a, Num a, ToMarkup b, Num b) => String -> [(String, Color, [(a, b)])] -> Markup 
-buildData dataFunction plots = [shamlet|
+buildData :: (ToMarkup a, ToMarkup b, Num b) 
+          => ([(a, b)] -> Markup)
+          -> String
+          -> [(String, Color, [(a, b)])] -> Markup 
+buildData convertValues dataFunction plots = [shamlet|
         function #{dataFunction}() {
             var result = [];
             $forall (label, color, values) <- plots
                 result.push({
                     key: '#{label}',
                   color: '#{color}',
-                 values: #{buildDataValues values}
+                 values:  #{convertValues values}
                 });
             return result;
         }
     |]
 
-buildDataValues :: (ToMarkup a, Num a, ToMarkup b, Num b) => [(a, b)] -> Markup
-buildDataValues values = [shamlet| 
+xyNumberValues :: (ToMarkup a, ToMarkup b, Num b) => [(a, b)] -> Markup
+xyNumberValues values = [shamlet| 
         [
         $forall (x, y) <- values
-            { x : #{x}, y : #{y}},
+            { x : #{preEscapedToHtml x}, y : #{y}},
         ]    
     |]
+
+textLabelValues :: (ToMarkup a, Num a) => [(String, a)] -> Markup
+textLabelValues values = [shamlet| 
+        [
+        $forall (x, y) <- values
+            { x : "#{x}", y : #{y}},
+        ]    
+    |]
+
 
 autoRefresh :: Bool -> Markup
 autoRefresh enabled = if enabled 
                         then [shamlet| <script> setInterval(location.reload, 1000); |]
                         else [shamlet| |]
 
-generateColor :: Int -> Int -> String
+-- | Helper to generate colours for a plot. The first argument is the number of 
+--   of graphs and the second is the index of this graph. Returns a unique 
+--   colour for every plot maximally spaced out on the colour wheel.     
+generateColor :: Int -> Int -> Color
 generateColor total number = "hsl(" ++ show hue ++ ",20%, 50%)"
     where step = 360 / (fromIntegral total)
           hue  = (fromIntegral number) * step
+
+colors :: Int -> [Color]          
+colors total = map (generateColor total) [0..total]
 
 writeResult :: PlotOptions -> String -> IO ()
 writeResult opts html = do

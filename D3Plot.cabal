@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                D3Plot
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A library for plotting data using D3 and NVD3 JavaScript libraries directly from Haskell. Designed for interactive use for data analysis.
 -- description:         
 homepage:            https://github.com/andreyLevushkin/D3Plot
