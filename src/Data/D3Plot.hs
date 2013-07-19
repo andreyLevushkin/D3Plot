@@ -21,6 +21,8 @@ import System.IO
 import System.FilePath.Posix
 import System.Directory
 
+import Data.String.Utils
+
 import Control.Arrow ((***))
 
 import Paths_D3Plot
@@ -215,9 +217,12 @@ textLabelValues :: (ToMarkup a, Num a) => [(String, a)] -> Markup
 textLabelValues values = [shamlet| 
         [
         $forall (x, y) <- values
-            { x : "#{x}", y : #{y}},
+            { x : "#{quoteEscape x}", y : #{y}},
         ]    
     |]
+
+quoteEscape :: String -> String
+quoteEscape = replace "\"" "\\\""
 
 
 autoRefresh :: Bool -> Markup

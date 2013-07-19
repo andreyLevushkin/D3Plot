@@ -35,3 +35,5 @@ library
                , shakespeare-js
                , blaze-html
                , directory
+               , aeson
+               , MissingH
