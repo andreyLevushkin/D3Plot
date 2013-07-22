@@ -6,6 +6,8 @@ module Data.D3Plot (
     LinePlottable (linePlot, linePlots, linePlotWithOpts),
     BarPlottable (barPlot, barPlots, barPlotWithOpts),
     PlotOptions(PlotOptions, plotPath, plotAutoRefresh, plotFileName),     
+    drawDiGraph,
+    GraphNode(nodeName),
     Color,
     defaultOpts,
     generateColor,
@@ -24,6 +26,8 @@ import System.Directory
 import Data.String.Utils
 
 import Control.Arrow ((***))
+
+import Data.D3Plot.DiGraph
 
 import Paths_D3Plot
 
@@ -115,6 +119,22 @@ plotBarChart :: (ToMarkup b, Num b)
          -> [(String, Color, [(String, b)])] 
          -> IO ()
 plotBarChart = render barChart (buildData textLabelValues)       
+
+
+-- | Draw a directed graph using the D3 force layout
+--   Parameters are the list of nodes and list of edges given as pairs
+--   of indecies into the node list.
+drawDiGraph :: GraphNode a => PlotOptions -> [a] -> [(Int, Int)] -> IO ()
+drawDiGraph opts nodes edges = writeResult opts $ renderHtml template
+    where template = [shamlet|
+        <html>
+            #{htmlHead}
+            <body>
+                <div id="chart">
+
+                <script>
+                    #{diGraphMarkup (500,500) "chart" nodes edges}
+    |]
 
 
 render :: (ToMarkup a, ToMarkup b, Num b) 
