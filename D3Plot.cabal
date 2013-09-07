@@ -20,7 +20,7 @@ Data-Files: resources/nv.d3.min.js
 
 library
   exposed-modules: Data.D3Plot
-  other-modules:   Paths_D3Plot
+  other-modules:   Paths_D3Plot, Data.D3Plot.DiGraph
   hs-source-dirs:  src
 
   extensions: OverloadedStrings
@@ -29,7 +29,7 @@ library
             , MultiParamTypeClasses
             , GeneralizedNewtypeDeriving
             
-  build-depends: base ==4.5.*
+  build-depends: base >= 4.5
                , hamlet
                , filepath
                , shakespeare-js
